@@ -2,6 +2,7 @@ import telebot
 from telebot import types
 import habr_parser
 from datetime import datetime
+import queue
 
 users = []
 
@@ -37,35 +38,49 @@ def bot_thread(filters):
 
     bot.polling(none_stop=True, interval=0)
 
-def notifier_thread(filters):
+def notifier_thread(filters : list[str], tasks_queue : queue.Queue):
 
     list_of_jobs = []
 
     characters_to_replace = [".", "-", "!", "*", "'", "(", ")", ";", ":", "@", "&", "=", "+", "$", ",", "/", "?", "%", "#", "[", "]"]
 
-    tasks_database = habr_parser.read_tasks_database()
-
-    database_updated = datetime.now()
-
     while(True):
+        new_tasks = []
 
-        if (datetime.now() - database_updated).total_seconds() / 60 >= 3: 
-            tasks_database = habr_parser.read_tasks_database()
-            database_updated = datetime.now()
+        while not tasks_queue.empty():
+            new_tasks.append(tasks_queue.get())
 
-        if (len(users) == 0):
+        if len(new_tasks) == 0:
+            continue
+
+        if len(users) == 0:
             continue
 
         temp_list = []
-        for task in tasks_database:
+        for task in new_tasks:
+            if (len(filters) == 0):
+                temp_list = new_tasks
+                break
             for filter in filters:
                 if filter in task.title or filter in ' '.join(task.tags):
                     t = task.title
                     for c in characters_to_replace:
                         t = t.replace(c, f'\{c}')
                     temp_list.append(f'[{t}]({task.url.strip()})')
+
+        for elem in temp_list:
+            bot.send_message(users[0], elem, parse_mode='MarkdownV2', disable_web_page_preview=True)
+
+        # temp_list = []
+        # for task in tasks_database:
+        #     for filter in filters:
+        #         if filter in task.title or filter in ' '.join(task.tags):
+        #             t = task.title
+        #             for c in characters_to_replace:
+        #                 t = t.replace(c, f'\{c}')
+        #             temp_list.append(f'[{t}]({task.url.strip()})')
                     
-        if (list_of_jobs != temp_list):
-            list_of_jobs = temp_list
-            for elem in list_of_jobs:
-                bot.send_message(users[0], elem, parse_mode='MarkdownV2', disable_web_page_preview=True)
+        # if (list_of_jobs != temp_list):
+        #     list_of_jobs = temp_list
+        #     for elem in list_of_jobs:
+        #         bot.send_message(users[0], elem, parse_mode='MarkdownV2', disable_web_page_preview=True)
