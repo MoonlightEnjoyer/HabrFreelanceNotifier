@@ -6,52 +6,13 @@ from psycopg2 import Error
 from psycopg2 import sql
 import datetime
 import queue
-
-password = ''
-
-with open('../config.txt', 'r') as token_file:
-    lines = token_file.readlines()
-    token = lines[0].strip()
-    password = lines[1].strip()
-
-
-class Task:
-    def __init__(self, title, tags, description, url, publish_date) -> None:
-        self.title = title
-        self.tags = tags
-        self.description = description
-        self.url = url
-        self.publish.date = publish_date
-
-    def __eq__(self, __value: object) -> bool:
-        return self.title == object.title
-    
-
-def createTasksTable():
-    try:
-        connection = psycopg2.connect(user="dude",
-                                      password=password,
-                                      host="localhost",
-                                      port="5432",
-                                      database="tasks")
-
-        cursor = connection.cursor()
-
-        cursor.execute(sql.SQL(
-            "CREATE TABLE IF NOT EXISTS TASKS (ID BIGINT PRIMARY KEY NOT NULL, TITLE VARCHAR NOT NULL, TAGS VARCHAR ARRAY, DESCRIPTION VARCHAR, URL VARCHAR, PUBLISH_TIME TIMESTAMP)"))
-        connection.commit()
-
-    except (Exception, Error) as error:
-        print("Ошибка при работе с PostgreSQL", error)
-    finally:
-        if connection:
-            cursor.close()
-            connection.close()
+from common_types import Config, User, Task
+import database_operations
 
 def replace_month_name(month_str) -> str:
     return month_str.replace('января', '01').replace('февраля', '02').replace('марта', '03').replace('апреля', '04').replace('мая', '05').replace('июня', '06').replace('июля', '07').replace('августа', '08').replace('сентября', '09').replace('октября', '10').replace('ноября', '11').replace('декабря', '12')
 
-def fill_tasks_table():
+def fill_tasks_table(config : Config):
     url = f'https://freelance.habr.com/tasks?page='
     tasks = []
     ua = UserAgent()
@@ -64,12 +25,7 @@ def fill_tasks_table():
     page = 1
 
     try:
-        connection = psycopg2.connect(user="dude",
-                                      password=password,
-                                      host="localhost",
-                                      port="5432",
-                                      database="tasks")
-
+        connection = psycopg2.connect(user=config.database_user, password=config.password, host=config.host, port=config.port, database=config.database)
         cursor = connection.cursor()
 
         while (True):
@@ -87,7 +43,6 @@ def fill_tasks_table():
 
             if len(raw_tasks) == 0:
                 break
-
 
             for raw_task in raw_tasks:
                 tasks.append(raw_task)
@@ -116,19 +71,13 @@ def fill_tasks_table():
             for raw_tag in raw_tags:
                 tags.append(raw_tag.string)
 
-
-            cursor.execute(sql.SQL(
-                        "INSERT INTO TASKS (ID, TITLE, TAGS, DESCRIPTION, URL, PUBLISH_TIME) VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (ID) DO "
-                        "NOTHING"),
-                        [hash(title), title, tags, description, f'https://freelance.habr.com{ref}', pub_time])
-            connection.commit()
+            database_operations.insert_task(cursor=cursor, connection=connection, title=title, tags=tags, description=description, ref=ref, pub_time=pub_time)
 
 
             print(f'{progress} / {len(tasks)}')
 
             progress += 1
 
-        
     except (Exception, Error) as error:
         print("Ошибка при работе с PostgreSQL", error)
     finally:
@@ -136,7 +85,7 @@ def fill_tasks_table():
             cursor.close()
             connection.close()
 
-def get_new_tasks(tasks_queue : queue.Queue):
+def get_new_tasks(config : Config, tasks_queue : queue.Queue):
     url = f'https://freelance.habr.com/tasks?page='
     tasks = []
     ua = UserAgent()
@@ -149,16 +98,11 @@ def get_new_tasks(tasks_queue : queue.Queue):
     page = 1
 
     try:
-        connection = psycopg2.connect(user="dude",
-                                      password=password,
-                                      host="localhost",
-                                      port="5432",
-                                      database="tasks")
+        connection = psycopg2.connect(user=config.database_user, password=config.password, host=config.host, port=config.port, database=config.database)
 
         cursor = connection.cursor()
 
-        cursor.execute(sql.SQL(
-                        "SELECT MAX (PUBLISH_TIME) FROM TASKS"))
+        cursor.execute(sql.SQL("SELECT MAX (PUBLISH_TIME) FROM TASKS"))
         connection.commit()
 
         last_inserted_task = cursor.fetchall()[0][0]
@@ -201,19 +145,13 @@ def get_new_tasks(tasks_queue : queue.Queue):
             for raw_tag in raw_tags:
                 tags.append(raw_tag.string)
 
-
-            cursor.execute(sql.SQL(
-                        "INSERT INTO TASKS (ID, TITLE, TAGS, DESCRIPTION, URL, PUBLISH_TIME) VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (ID) DO "
-                        "NOTHING"),
-                        [hash(title), title, tags, description, f'https://freelance.habr.com{ref}', pub_time])
-            connection.commit()
+            database_operations.insert_task(cursor=cursor, connection=connection, title=title, tags=tags, description=description, ref=ref, pub_time=pub_time)
 
             tasks_queue.put(Task(title, tags, description, f'https://freelance.habr.com{ref}', pub_time_datetime))
 
             print(f'{progress} / {len(tasks)}')
 
             progress += 1
-
         
     except (Exception, Error) as error:
         print("Ошибка при работе с PostgreSQL", error)
@@ -222,21 +160,19 @@ def get_new_tasks(tasks_queue : queue.Queue):
             cursor.close()
             connection.close()
     
-
-
-def select_tasks(filters) -> list[Task]:
+def select_tasks(config : Config, filters) -> list[Task]:    
     try:
-        connection = psycopg2.connect(user="dude",
-                                      password=password,
-                                      host="localhost",
-                                      port="5432",
-                                      database="tasks")
+        connection = psycopg2.connect(user=config.database_user, password=config.password, host=config.host, port=config.port, database=config.database)
 
         cursor = connection.cursor()
 
-
-        cursor.execute(sql.SQL("SELECT * FROM TASKS WHERE CAST(%s as VARCHAR ARRAY) && TAGS"), [filters])
-        connection.commit()
+        if len(filters) == 0:
+            cursor.execute(sql.SQL("SELECT * FROM TASKS"))
+            connection.commit()
+        else:
+            for filter in filters:
+                cursor.execute(sql.SQL(f"SELECT * FROM TASKS WHERE ('{filter}' = ANY(TAGS)) OR (DESCRIPTION like '%{filter}%') OR (TITLE like '%{filter}%')"))
+            connection.commit()
 
         records = cursor.fetchall()
 

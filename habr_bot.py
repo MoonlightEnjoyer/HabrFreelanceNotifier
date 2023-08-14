@@ -3,44 +3,26 @@ from telebot import types
 import habr_parser
 from datetime import datetime
 import queue
-
-users = []
-
-token = ''
-
-with open('../config.txt', 'r') as token_file:
-    lines = token_file.readlines()
-    token = lines[0].strip()
-    db_password = lines[1].strip()
-
-bot = telebot.TeleBot(token)
+from common_types import User, Task, Config
     
-def bot_thread(filters):
-
-    @bot.message_handler(commands=['start'])
-    def start(message):
-        pass
-
-    @bot.message_handler(commands=['search'])
-    def start(message):
-        if (users.count(message.from_user.id) == 0):
-            users.append(message.from_user.id)
-
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        bot.send_message(message.from_user.id, "Looking for tasks...", reply_markup=markup)
+def bot_thread(bot, config : Config, users : dict):
+    @bot.message_handler(commands=['reg'])
+    def reg_handler(message):
+        if (message.from_user.id not in users):
+            users[message.from_user.id] = User(message.from_user.id, [])
+            bot.send_message(message.from_user.id, "Registered new user", parse_mode='Markdown')
 
     @bot.message_handler(commands=['keys'])
-    def start(message):
+    def keys_handler(message):
+        reg_handler(message)
         keys = message.text.replace('/keys ', '')
         for key in keys.split(' '):
-            filters.append(key)
+            users[message.from_user.id].filters.append(key)
             print(key)
 
     bot.polling(none_stop=True, interval=0)
 
-def notifier_thread(filters : list[str], tasks_queue : queue.Queue):
-
-    list_of_jobs = []
+def notifier_thread(bot, users : dict, tasks_queue : queue.Queue):
 
     characters_to_replace = [".", "-", "!", "*", "'", "(", ")", ";", ":", "@", "&", "=", "+", "$", ",", "/", "?", "%", "#", "[", "]"]
 
@@ -56,31 +38,20 @@ def notifier_thread(filters : list[str], tasks_queue : queue.Queue):
         if len(users) == 0:
             continue
 
-        temp_list = []
         for task in new_tasks:
-            if (len(filters) == 0):
-                temp_list = new_tasks
-                break
-            for filter in filters:
-                if filter in task.title or filter in ' '.join(task.tags):
-                    t = task.title
-                    for c in characters_to_replace:
-                        t = t.replace(c, f'\{c}')
-                    temp_list.append(f'[{t}]({task.url.strip()})')
+            temp_list = []
+            for user in users.values():
+                
+                if (len(user.filters) == 0):
+                    temp_list = new_tasks
+                    break
+                for filter in user.filters:
+                    if filter in task.title or filter in ' '.join(task.tags):
+                        temp_list.append(task)
+                        break
+            for temp_task in temp_list:
+                t = temp_task.title
+                for c in characters_to_replace:
+                    t = t.replace(c, f'\{c}')
+                bot.send_message(user.id, f'[{t}]({temp_task.url.strip()})', parse_mode='MarkdownV2', disable_web_page_preview=True)
 
-        for elem in temp_list:
-            bot.send_message(users[0], elem, parse_mode='MarkdownV2', disable_web_page_preview=True)
-
-        # temp_list = []
-        # for task in tasks_database:
-        #     for filter in filters:
-        #         if filter in task.title or filter in ' '.join(task.tags):
-        #             t = task.title
-        #             for c in characters_to_replace:
-        #                 t = t.replace(c, f'\{c}')
-        #             temp_list.append(f'[{t}]({task.url.strip()})')
-                    
-        # if (list_of_jobs != temp_list):
-        #     list_of_jobs = temp_list
-        #     for elem in list_of_jobs:
-        #         bot.send_message(users[0], elem, parse_mode='MarkdownV2', disable_web_page_preview=True)
