@@ -3,8 +3,9 @@ import habr_bot
 import threading
 import time
 import queue
-from common_types import Config
+from common_types import Config, init_global
 import telebot
+import datetime
 
 def get_new_tasks_thread(config, tasks_queue):
     while(True):
@@ -18,6 +19,8 @@ users = {}
 config = Config()
 
 bot = telebot.TeleBot(config.token)
+
+init_global()
 
 bot_thread = threading.Thread(target=habr_bot.bot_thread, args=(bot, config, users, ))
 notifyer_thread = threading.Thread(target=habr_bot.notifier_thread, args=(bot, users, tasks_queue))

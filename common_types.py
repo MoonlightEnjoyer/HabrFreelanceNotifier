@@ -1,13 +1,12 @@
+import datetime
+
 class Task:
-    def __init__(self, title, tags, description, url, publish_date) -> None:
-        self.title = title
-        self.tags = tags
-        self.description = description
-        self.url = url
-        self.publish_date = publish_date
+    def __init__(self, source, message) -> None:
+        self.source = source
+        self.message = message
 
     def __eq__(self, __value: object) -> bool:
-        return self.title == object.title
+        return self.source == object.source and self.message == object.message
     
 class User:
     def __init__(self, id, filters) -> None:
@@ -19,8 +18,7 @@ class Config:
         with open('../config.txt', 'r') as token_file:
             lines = token_file.readlines()
             self.token = lines[0].strip()
-            self.database_user = lines[1].strip()
-            self.password = lines[2].strip()
-            self.host = lines[3].strip()
-            self.port = lines[4].strip()
-            self.database = lines[5].strip()
+
+def init_global() -> None:
+    global last_inserted_task
+    last_inserted_task = datetime.datetime.now()

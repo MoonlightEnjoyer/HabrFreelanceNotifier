@@ -12,20 +12,21 @@ def bot_thread(bot, config : Config, users : dict):
             users[message.from_user.id] = User(message.from_user.id, [])
             bot.send_message(message.from_user.id, "Registered new user", parse_mode='Markdown')
 
-    @bot.message_handler(commands=['keys'])
-    def keys_handler(message):
-        reg_handler(message)
-        keys = message.text.replace('/keys ', '')
-        for key in keys.split(' '):
-            users[message.from_user.id].filters.append(key)
-            print(key)
+    # @bot.message_handler(commands=['keys'])
+    # def keys_handler(message):
+    #     reg_handler(message)
+    #     keys = message.text.replace('/keys ', '')
+    #     for key in keys.split(' '):
+    #         users[message.from_user.id].filters.append(key)
+    #         print(key)
 
-    bot.polling(none_stop=True, interval=0)
+    while True:
+        try:
+            bot.polling(none_stop = True, interval = 0)
+        except Exception:
+            pass
 
 def notifier_thread(bot, users : dict, tasks_queue : queue.Queue):
-
-    characters_to_replace = [".", "-", "!", "*", "'", "(", ")", ";", ":", "@", "&", "=", "+", "$", ",", "/", "?", "%", "#", "[", "]"]
-
     while(True):
         new_tasks = []
 
@@ -38,20 +39,6 @@ def notifier_thread(bot, users : dict, tasks_queue : queue.Queue):
         if len(users) == 0:
             continue
 
-        for task in new_tasks:
-            temp_list = []
-            for user in users.values():
-                
-                if (len(user.filters) == 0):
-                    temp_list = new_tasks
-                    break
-                for filter in user.filters:
-                    if filter in task.title or filter in ' '.join(task.tags):
-                        temp_list.append(task)
-                        break
-            for temp_task in temp_list:
-                t = temp_task.title
-                for c in characters_to_replace:
-                    t = t.replace(c, f'\{c}')
-                bot.send_message(user.id, f'[{t}]({temp_task.url.strip()})', parse_mode='MarkdownV2', disable_web_page_preview=True)
-
+        for user in users.values():
+            for temp_task in new_tasks:
+                bot.send_message(user.id, temp_task.message, parse_mode='MarkdownV2', disable_web_page_preview=True)
