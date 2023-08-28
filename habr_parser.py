@@ -20,10 +20,15 @@ def get_new_tasks(config : Config, tasks_queue : queue.Queue):
         'user-Agent': ua.google,
     }
 
-    #page = 1
+    for i in range(5):
+        try:
+            res = requests.get(url, headers=headers)
+            res.close()
+            break
+        except:
+            print("Connection failed.")
+            return
 
-    res = requests.get(url, headers=headers)
-    res.close()
     req = res.text
 
     soup = BeautifulSoup(req, 'lxml')
@@ -35,16 +40,26 @@ def get_new_tasks(config : Config, tasks_queue : queue.Queue):
 
     progress = 0
 
-    characters_to_replace = [".", "-", "!", "*", "'", "(", ")", ";", ":", "@", "&", "=", "+", "$", ",", "/", "?", "%", "#", "[", "]"]
+    characters_to_replace = [".", "-", "!", "*", "'", "(", ")", ";", ":", "@", "&", "=", "+", "$", ",", "/", "?", "%", "#", "[", "]", '|']
 
     for task in reversed(tasks):
 
         print(f'{progress} / {len(tasks)}')
         progress += 1
 
+        if hash(task.string) in common_types.last_task_hashes:
+            print('skip')
+            continue
+
         ref = str(task.find('a').get('href'))
-        res = requests.get(f'https://freelance.habr.com{ref}')
-        res.close()
+        for i in range(5):
+            try:
+                res = requests.get(f'https://freelance.habr.com{ref}')
+                res.close()
+                break
+            except:
+                pass
+
         if res.status_code != 200:
             continue
         req = res.text
@@ -57,17 +72,36 @@ def get_new_tasks(config : Config, tasks_queue : queue.Queue):
         pub_time = f'{pub_time[2]}-{pub_time[1]}-{pub_time[0]} {pub_time[3]}:00'
         pub_time_datetime = datetime.datetime.strptime(pub_time, '%Y-%m-%d %H:%M:%S')
         
+        common_types.last_task_hashes.append(hash(task.string))
+
         if (common_types.last_inserted_task >= pub_time_datetime):
             continue
         
         common_types.last_inserted_task = pub_time_datetime
+        
+        if len(common_types.last_task_hashes) > 25:
+            common_types.last_task_hashes = common_types.last_task_hashes[-25:]
 
-        tags = []
+        search_payload = []
 
         for raw_tag in raw_tags:
-            tags.append(raw_tag.string)
+            search_payload.append(raw_tag.string)
 
-        t = title
+        escaped_title = title
+        escaped_description = description
         for c in characters_to_replace:
-            t = t.replace(c, f'\{c}')
-        tasks_queue.put(Task('habr', f'[{t}]({url.strip()})'))
+            escaped_title = escaped_title.replace(c, f'\{c}')
+            escaped_description = escaped_description.replace(c, ' ')
+
+        description_splitted = description.strip().split(' ')
+
+        for description_part in description_splitted:
+            search_payload.append(description_part)
+
+        title_splitted = title.split(' ')
+
+        for title_part in title_splitted:
+            search_payload.append(title_part)
+
+
+        tasks_queue.put(Task('habr', f'[{escaped_title}](https://freelance.habr.com{ref.strip()})', search_payload))
